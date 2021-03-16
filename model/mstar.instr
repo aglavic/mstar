@@ -58,7 +58,7 @@ DECLARE
 * refered to as focus_moderator_y_rot
 */
 
-int n_pulses=4;
+int n_pulses=1;
 
 double feeder_exit=0.5;
 double VS_maxV=0.005;
@@ -180,10 +180,20 @@ t += 1.0/source_frequency*(rand()%(n_pulses));
 p *= n_pulses; // normalize weights to stay at 1/pulse
 %}
 
-COMPONENT source_brilliance = Brilliance_monitor(nlam=306,nt=101,filename="source_brilliance",
+COMPONENT source_brilliance = Monitor_nD(filename="source_brilliance",                                         
+	xwidth=0.03, yheight=0.03,
+    options="intensity per cm2 square vdiv limits=[-0.2 0.2] hdiv limits=[-0.2 0.2] lambda limits=[0,30] bins=300")
+AT (0,0,1.0) RELATIVE InstrumentAxis
+
+COMPONENT source_brilliance_2 = Monitor_nD(filename="source_brilliance_2",                                         
+	xwidth=0.03, yheight=0.03,
+    options="intensity per cm2 square vdiv limits=[-0.5 0.5] hdiv limits=[-0.5 0.5] lambda limits=[0,30] bins=300")
+AT (0,0,1.00000003) RELATIVE InstrumentAxis
+
+COMPONENT source_brilliance_mcstas = Brilliance_monitor(nlam=306,nt=101,filename="source_brilliance_mcstas",
 	t_0=0,t_1=20000+1000000.0/source_frequency*n_pulses,lambda_0=0.5, xwidth=0.03, yheight=0.03,
 	lambda_1=30.0, Freq=1, srcarea=7.0685835)
-AT (0,0,1.0) RELATIVE InstrumentAxis
+AT (0,0,1.00000005) RELATIVE InstrumentAxis
 
 COMPONENT feeder=Elliptic_guide_gravity(l=5.5-feeder_exit,
     dimensionsAt = "exit",
