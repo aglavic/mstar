@@ -1,0 +1,36 @@
+#!/bin/tcsh
+#SBATCH -J M-STAR
+#SBATCH -N 6
+#SBATCH --ntasks-per-node=24
+#SBATCH --time=2-00:00:00
+#SBATCH --mail-type=fail
+#SBATCH --mail-user=artur.glavic@psi.ch
+
+#SBATCH -o stdout.log
+#SBATCH -e stderr.log
+
+#SBATCH --partition=medium
+
+echo "Starting at `date`"
+echo "Running on hosts: $SLURM_NODELIST"
+echo "Running on $SLURM_NNODES nodes."
+echo "Running on $SLURM_NPROCS processors."
+echo "Current working directory is `pwd`"
+
+#module unload intel
+#module load intel
+module load mcstas
+bash compile_if_needed.sh
+
+# beamline transmission with normal chopper
+rm -r results/transmission_normal
+mpirun -np $SLURM_NPROCS ./mstar.out -d results/transmission_normal -n 1e9 \
+       omega=0.0 reference=0 skipping_chopp=0 lambda_min=2.5 sample_height=0.005 sample_length=0.001
+
+# beamline transmission with hybrid pulse-skipping chopper
+rm -r results/transmission_skip
+mpirun -np $SLURM_NPROCS ./mstar.out -d results/transmission_skip -n 1e9 \
+       omega=0.0 reference=0 skipping_chopp=1 lambda_min=2.5 sample_height=0.005 sample_length=0.001
+        
+echo "Program finished with exit code $? at: `date`"
+

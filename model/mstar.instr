@@ -1,0 +1,451 @@
+ /*******************************************************************************
+*         McStas instrument definition URL=http://www.mcstas.org
+*
+* Instrument: SNS_STS_MSTAR
+*
+* %Identification
+* Written by: Artur Glavic (artur.glavic@psi.ch)
+* Date: 02. 10. 2020
+* Origin: PSI
+* Release: McStas 2.6.1
+* Version: 0.1
+* %INSTRUMENT_SITE: ORNL SNS STS
+*
+* Magnetic - Second Target station Advanced Reflectometer
+*
+* %Description
+* M-STAR is a reflectometer for small samples, high resolution and wide ToF band.
+* It allows very low background measurements up to high q-values with 2x2mm² samples.
+* The optics system uses a simple feeder and Selene guide optics.
+*
+*
+* %Parameters
+* reference: []              0/1 use perfect reflector instead of sample as 
+*                            simple normalization runs. 2 writes events from sample to file.
+* skipping_chopp: []         0/1 use special hybrid pulse skipping chopper with 
+*                            15/4 Hz and 1/1/2 band opening.
+* lambda_min: [A]            Minimum wavelength the chopper is phased for, 
+*                            can be slighly biased to larger valuesdue to 
+*                            central pulse time.
+* sample_length: [m]         Size of the sample along the beam direction, 
+*                            also used for VS.
+* sample_height: [m]         Size of the sample perpendicular to beam direction, 
+*                            also used for VS.
+* over_illumination: [m]     Increases the VS size perpendicular to beam above 
+*                            the sample size.
+* omega: [deg]               Sample rotation omega, detector follows as 2-omega. 
+*                            This is relative to the center of the beam divergence 
+*                            unless the horizontal slit is closed, then it is the 
+*                            slit center.                    
+* divergence_slit_H: [deg]   Angular size of the two resolution slits in front of
+*                            the sample. These are centered on the higher intensity
+*                            are of the guide divergence. (Horizontal)
+* divergence_slit_V: [deg]   Vertical
+*
+* %End
+*******************************************************************************/
+
+DEFINE INSTRUMENT SNS_STS_MSTAR(int reference=0, int skipping_chopp=0, double lambda_min=2.4, 
+                                double sample_length=0.01, double sample_height=0.01, double over_illumination=0.0001,
+                                double omega=0.0, double divergence_slit_H=5.0, double divergence_slit_V=5.0)
+
+// optimal for short wavelength around b=0.0325, longer wavelength around b=0.0425
+
+DECLARE
+%{
+/* Geometrical parameters from CAD model of Estia (ESS-0050413)
+* TCS coordinate and directional rotation first focus point 
+* refered to as focus_moderator_y_rot
+*/
+
+int n_pulses=4;
+
+double feeder_exit=0.5;
+double VS_maxV=0.005;
+double VS_maxH=0.002;
+double VS_location=6.5;
+double feeder_output;
+double feeder_outputH;
+
+double selene_theta;
+double selene_xi=0.7;
+double selene_b=0.036;
+double selene_c=5.75/2.0;
+double selene_m=4.0;
+
+double selene_h_in;
+double selene_l_in;
+double selene_l_center;
+
+double selene_length;
+double selene_rot;
+double mask_from;
+double mask_to;
+double detector_distance=3.0;
+
+
+double source_frequency=15.0;
+double moderator_chopper=7.0;
+double moderator_detector;
+double chopper_phase;
+double velocity_max;
+double chopper_opening;
+
+double sample_area;
+
+%}
+
+INITIALIZE
+%{
+
+selene_length=2.0*selene_c;
+
+selene_h_in=selene_b*sqrt(1.0-selene_xi*selene_xi);
+
+selene_theta=(atan(selene_h_in/(selene_c*(1.0-selene_xi)))-atan(selene_h_in/(selene_c*(1.0+selene_xi))))*180.0/PI;
+selene_rot=(atan(selene_h_in/(selene_c*(1.0-selene_xi)))+atan(selene_h_in/(selene_c*(1.0+selene_xi))))/2.0*180.0/PI;
+
+selene_l_in=selene_c*(1.0-selene_xi)*tan((selene_rot - selene_theta/2.0)*PI/180.0);
+selene_l_center=selene_c*tan((selene_rot - selene_theta/2.0)*PI/180.0);
+
+printf(" Selene theta  = %.4f deg\n", selene_theta);
+printf(" Selene rotation  = %.4f deg\n", selene_rot);
+printf(" Selene window  = %.4f - %.4f m | %.4f\n", selene_l_in, selene_h_in, selene_l_center);
+
+feeder_output=2.0*(VS_maxV/2.+feeder_exit*tan(selene_theta/2.0/180.0*PI));
+feeder_outputH=2.0*(VS_maxH/2.+feeder_exit*tan(selene_theta/2.0/180.0*PI));
+printf(" Feeder Output Height/Width  = %.4f/%.4f m\n", feeder_output, feeder_outputH);
+
+moderator_detector=VS_location+2.0*selene_length+detector_distance;
+chopper_opening=360.*moderator_chopper/moderator_detector*0.98;
+velocity_max= 3.956034E3 / lambda_min; // h/m_n over lambda - ((3.9..e-7m^2/s))/(1e-10m)
+chopper_phase=360.0*moderator_chopper*source_frequency/velocity_max+chopper_opening/2.0;
+printf(" Chopper Opening  = %.4f deg\n", chopper_opening);
+printf(" Chopper Phase  = %.4f deg\n", chopper_phase);
+
+sample_area=10000.0*sample_length*sample_height;
+
+%}
+
+TRACE
+
+COMPONENT origin = Progress_bar()
+    AT (0,0,0) ABSOLUTE
+
+COMPONENT InstrumentAxis = Arm() // main axis of beam leaving moderator
+    AT (0,0,0) RELATIVE origin
+    ROTATED (0, 0, 0) RELATIVE origin
+
+COMPONENT arm_virtual_source = Arm()
+    AT (0, 0, VS_location) RELATIVE InstrumentAxis 
+    ROTATED (0,-omega,0) RELATIVE InstrumentAxis
+
+
+COMPONENT arm_selene1=Arm()
+    AT (0, 0, VS_location) RELATIVE InstrumentAxis
+    ROTATED (selene_rot, selene_rot, 0) RELATIVE InstrumentAxis
+
+COMPONENT arm_selene2=Arm()
+    AT (0, 0, selene_length) RELATIVE arm_selene1
+
+
+COMPONENT arm_sample=Arm()
+    AT (0, 0, 2.0*selene_length) RELATIVE arm_selene1
+    ROTATED (0,-omega+(divergence_slit_H<1.0)*selene_theta/3.0,0) RELATIVE InstrumentAxis
+
+COMPONENT arm_detector=Arm()
+    AT (0, 0, 2.0*selene_length) RELATIVE arm_selene1
+    ROTATED (0,-omega*2.0+(divergence_slit_H<1.0)*selene_theta/3.0,0) RELATIVE InstrumentAxis
+
+
+
+/**********
+ * Source *
+ **********/
+
+COMPONENT moderator = SNS_source_mod(
+		filename = "source_rot2_cdr_tube_d3_20190417.dat",
+		radius=0.015, dist=1.0, focus_xw=0.03, focus_yh=0.03, Emin=0.01, Emax=40.0, Anorm=7.0685835E-4)
+    AT (0, 0, 0) RELATIVE InstrumentAxis
+/*
+COMPONENT moderator = SNS_source_mod(
+		filename = "source_rot2_cdr_cyl_3x3_20190417.dat",
+		xwidth=0.03, yheight=0.03, dist=1.0, focus_xw=0.03, focus_yh=0.03, Emin=0.01, Emax=40.0, Anorm=0.0009)
+    AT (0, 0, 0) RELATIVE InstrumentAxis */
+EXTEND
+%{
+// allow several source pulses to simulate frame overlap etc.
+t += 1.0/source_frequency*(rand()%(n_pulses));
+//p *= source_frequency*n_pulses; // change weight to 1/s instead of 1/pulse
+p *= n_pulses; // normalize weights to stay at 1/pulse
+%}
+
+COMPONENT source_brilliance = Brilliance_monitor(nlam=306,nt=101,filename="source_brilliance",
+	t_0=0,t_1=20000+1000000.0/source_frequency*n_pulses,lambda_0=0.5, xwidth=0.03, yheight=0.03,
+	lambda_1=30.0, Freq=1, srcarea=7.0685835)
+AT (0,0,1.0) RELATIVE InstrumentAxis
+
+COMPONENT feeder=Elliptic_guide_gravity(l=5.5-feeder_exit,
+    dimensionsAt = "exit",
+    linyh = 5.0, loutyh=feeder_exit*feeder_output/VS_maxV,
+    linxw = 1e6, loutxw=feeder_exit*feeder_outputH/VS_maxH,
+    xwidth=feeder_outputH, yheight=feeder_output,
+    m=2.8) 
+    AT (0, 0, 1.0000001) RELATIVE InstrumentAxis
+
+/* The actual virtual source mask, two L-shaped absorbers (first top-right) */
+COMPONENT virtual_source_TL = Slit(
+    xmin = -1.0, xmax = 0.0, ymin = -1.0, ymax = sample_height/2+over_illumination*5)
+    WHEN omega>0
+    AT (over_illumination, 0, -0.5*sample_length) RELATIVE arm_virtual_source
+
+// window to cut down to defined size for test setting
+COMPONENT virtual_source_HC = Slit(xwidth=sample_length, yheight=sample_height)
+    WHEN omega==0
+    AT (0, 0, 0) RELATIVE arm_virtual_source
+//     
+/* The actual virtual source mask, two L-shaped absorbers (second bottom-left) */
+COMPONENT virtual_source_BR = Slit(
+    xmin = 0.0, xmax = 1.0, ymin = -sample_height/2-over_illumination*5, ymax = 1.0)
+    WHEN omega>0
+    AT (-over_illumination, 0, 0.5*sample_length) RELATIVE arm_virtual_source
+
+
+
+COMPONENT mon1=L_monitor(filename="mon1",
+            xmin=-0.1, xmax=0.1, 
+            ymin=-0.1, ymax=0.1, 
+			Lmin=1, Lmax=31, nL=300)
+    AT (0, 0, moderator_chopper-0.001) RELATIVE InstrumentAxis
+COMPONENT tof_mon1=TOF_monitor(filename="tof_mon1",
+            xmin=-0.1, xmax=0.1, 
+            ymin=-0.1, ymax=0.1, 
+			tmin=0, tmax=(n_pulses*1.0e6/source_frequency), nt=500)
+    AT (0, 0, moderator_chopper-0.001) RELATIVE InstrumentAxis
+
+
+/*
+** Standard bandwidth chopper
+**/
+COMPONENT chopper=DiskChopper(radius=0.35, yheight=0.05, 
+                              theta_0=chopper_opening, nslit=1, 
+							  phase=chopper_phase, nu=source_frequency)
+	WHEN skipping_chopp==0
+    AT (0, 0, moderator_chopper) RELATIVE InstrumentAxis
+	GROUP Chopper1
+
+
+/*
+** A chopper that takes 2x single bandwidth + 1x double bandwidth + 1x pulse skip
+**/
+COMPONENT c1=DiskChopper(radius=0.35, yheight=0.05, 
+                         theta_0=chopper_opening/4, nslit=1, 
+						 phase=(chopper_phase-chopper_opening/2)/4+chopper_opening/8, 
+						 nu=source_frequency/4.0)
+	WHEN skipping_chopp!=0
+    AT (0, 0, moderator_chopper) RELATIVE InstrumentAxis
+	GROUP Chopper1
+
+COMPONENT c2=DiskChopper(radius=0.35, yheight=0.05, 
+                         theta_0=chopper_opening/4, nslit=1, 
+						 phase=(chopper_phase-chopper_opening/2)/4+chopper_opening/8+90.0, 
+						 nu=source_frequency/4.0)
+	WHEN skipping_chopp!=0
+    AT (0, 0, moderator_chopper) RELATIVE InstrumentAxis
+	GROUP Chopper1
+
+COMPONENT c3=DiskChopper(radius=0.35, yheight=0.05, 
+                         theta_0=chopper_opening/2, nslit=1, 
+						 phase=(chopper_phase-chopper_opening/2)/4+chopper_opening/4+180.0, 
+						 nu=source_frequency/4.0)
+	WHEN skipping_chopp!=0
+    AT (0, 0, moderator_chopper) RELATIVE InstrumentAxis
+	GROUP Chopper1
+
+
+COMPONENT mon_chopper=L_monitor(filename="mon_chopper",
+            xmin=-0.1, xmax=0.1, 
+            ymin=-0.1, ymax=0.1, 
+			Lmin=1, Lmax=31, nL=300)
+    AT (0, 0, moderator_chopper+0.001) RELATIVE InstrumentAxis
+COMPONENT tof_chopper=TOF_monitor(filename="tof_chopper",
+            xmin=-0.1, xmax=0.1, 
+            ymin=-0.1, ymax=0.1, 
+			tmin=0, tmax=(n_pulses*1.0e6/source_frequency), nt=500)
+    AT (0, 0, moderator_chopper+0.001) RELATIVE InstrumentAxis
+
+
+
+COMPONENT S1IN=Slit(
+		xmin=-selene_h_in, xmax=-selene_l_in+VS_maxH/2,
+		ymin=selene_l_in-VS_maxV/2, ymax=selene_h_in)
+    AT (0, 0, selene_c*(1.0-selene_xi)-0.001) RELATIVE arm_selene1 
+
+
+COMPONENT selene1_guide_front = Elliptic_guide_gravity(
+    l=selene_length*selene_xi*0.5-0.001, dimensionsAt = "mid",
+    linyh = selene_c*(1.0-selene_xi), loutyh=selene_c+0.001,
+    linxw = selene_c*(1.0-selene_xi), loutxw=selene_c+0.001,
+    xwidth=selene_b*2, yheight=selene_b*2,
+    mleft=0, mtop=selene_m, 
+	mright=selene_m, mbottom=0) 
+    AT (0, 0, selene_c*(1.0-selene_xi)) RELATIVE arm_selene1
+
+COMPONENT S1CEN=Slit(
+		xmin=-selene_b, xmax=-selene_l_center+VS_maxH/4,
+		ymin=selene_l_center-VS_maxV/4, ymax=selene_b)
+    AT (0, 0, selene_c-0.0005) RELATIVE arm_selene1 
+	
+COMPONENT selene1_guide_back = Elliptic_guide_gravity(
+    l=selene_length*selene_xi*0.5, dimensionsAt = "mid",
+    linyh = selene_c, loutyh= selene_c*(1.0-selene_xi),
+    linxw = selene_c, loutxw= selene_c*(1.0-selene_xi),
+    xwidth=selene_b*2, yheight=selene_b*2,
+    mleft=0, mtop=selene_m, 
+	mright=selene_m, mbottom=0) 
+    AT (0, 0, selene_c) RELATIVE arm_selene1
+
+COMPONENT S1OUT=Slit(
+		xmin=-selene_h_in, xmax=0.0,
+		ymin=0.0, ymax=selene_h_in)
+    AT (0, 0, selene_c*(1.0+selene_xi)+0.001) RELATIVE arm_selene1 
+
+	
+
+COMPONENT MF=Slit(xwidth=VS_maxH*4.0, yheight=VS_maxV*4.0)
+    AT (0, 0, 0.0) RELATIVE arm_selene2
+
+
+COMPONENT mon2=L_monitor(filename="mon2",
+            xmin=-0.1, xmax=0.1, 
+            ymin=-0.1, ymax=0.1, 
+			Lmin=1, Lmax=31, nL=300)
+    AT (0, 0, 0.001) RELATIVE arm_selene2
+
+
+COMPONENT S2IN=Slit(
+		xmin=0.0, xmax=selene_h_in,
+		ymin=-selene_h_in, ymax=0.0)
+    AT (0, 0, selene_c*(1.0-selene_xi)-0.001) RELATIVE arm_selene2 
+
+COMPONENT selene2_guide_front = Elliptic_guide_gravity(
+    l=selene_length*selene_xi*0.5-0.001, dimensionsAt = "mid",
+    linyh = selene_c*(1.0-selene_xi), loutyh=selene_c+0.001,
+    linxw = selene_c*(1.0-selene_xi), loutxw=selene_c+0.001,
+    xwidth=selene_b*2, yheight=selene_b*2,
+    mleft=selene_m, mtop=0, 
+	mright=0, mbottom=selene_m) 
+    AT (0, 0, selene_c*(1.0-selene_xi)) RELATIVE arm_selene2
+
+COMPONENT S2CEN=Slit(
+		xmin=selene_l_center-VS_maxH/4, xmax=selene_b,
+		ymin=-selene_b, ymax=-selene_l_center+VS_maxV/4)
+    AT (0, 0, selene_c-0.0005) RELATIVE arm_selene2
+
+// used to limit the divergence for off-specular and conventional reflectometry
+COMPONENT DS=Slit(
+		xmin=(tan((selene_rot-selene_theta/3.0)/180.0*PI)-tan(divergence_slit_H/360.0*PI))*selene_c, 
+		xmax=(tan((selene_rot-selene_theta/3.0)/180.0*PI)+tan(divergence_slit_H/360.0*PI))*selene_c,
+		ymin=(-tan((selene_rot-selene_theta/3.0)/180.0*PI)-tan(divergence_slit_V/360.0*PI))*selene_c, 
+		ymax=(-tan((selene_rot-selene_theta/3.0)/180.0*PI)+tan(divergence_slit_V/360.0*PI))*selene_c)
+    AT (0, 0, selene_c-0.00025) RELATIVE arm_selene2
+	
+COMPONENT selene2_guide_back = Elliptic_guide_gravity(
+    l=selene_length*selene_xi*0.5, dimensionsAt = "mid",
+    linyh = selene_c, loutyh= selene_c*(1.0-selene_xi),
+    linxw = selene_c, loutxw= selene_c*(1.0-selene_xi),
+    xwidth=selene_b*2, yheight=selene_b*2,
+    mleft=selene_m, mtop=0, 
+	mright=0, mbottom=selene_m) 
+    AT (0, 0, selene_c) RELATIVE arm_selene2
+
+
+COMPONENT S2OUT=Slit(
+		xmin=selene_l_in-VS_maxH/2, xmax=selene_h_in,
+		ymin=-selene_h_in, ymax=-selene_l_in+VS_maxV/2)
+    AT (0, 0, selene_c*(1.0+selene_xi)+0.001) RELATIVE arm_selene2 
+
+
+// used to limit the divergence for off-specular and conventional reflectometry
+COMPONENT DS2=Slit(
+		xmin=(tan((selene_rot-selene_theta/3.0)/180.0*PI)-tan(2*divergence_slit_H/360.0*PI))*selene_c*(1-selene_xi), 
+		xmax=(tan((selene_rot-selene_theta/3.0)/180.0*PI)+tan(2*divergence_slit_H/360.0*PI))*selene_c*(1-selene_xi),
+		ymin=(-tan((selene_rot-selene_theta/3.0)/180.0*PI)-tan(2*divergence_slit_V/360.0*PI))*selene_c*(1-selene_xi), 
+		ymax=(-tan((selene_rot-selene_theta/3.0)/180.0*PI)+tan(2*divergence_slit_V/360.0*PI))*selene_c*(1-selene_xi))
+    AT (0, 0, selene_c*(1.0+selene_xi)+0.002) RELATIVE arm_selene2
+
+
+
+COMPONENT mon3=L_monitor(filename="mon3",
+            xmin=-0.1, xmax=0.1, 
+            ymin=-0.1, ymax=0.1, 
+			Lmin=1, Lmax=31, nL=300)
+    AT (0, 0, 2.0*selene_c-0.1) RELATIVE arm_selene2
+
+COMPONENT sampleRestrict = Slit(xwidth=sample_length, yheight=sample_height)
+    WHEN omega==0
+    AT (0, 0, 0) RELATIVE arm_sample
+
+/* Ni on Silicon as sample */
+COMPONENT sample = Mirror(
+    xwidth = sample_length, yheight = sample_height,
+    center = 1, transmit = 0,
+    reflect = "Si-Ni.ref"
+    )
+	WHEN omega>0.0 & reference==0
+    AT (0, 0, 0) RELATIVE arm_sample
+    ROTATED (0, 90, 0) RELATIVE arm_sample
+
+/* ideal reflector as reference */
+COMPONENT reference_sample = Mirror(
+    xwidth = sample_length, yheight = sample_height,
+    center = 1, transmit = 0,
+    R0 = 1.0, alpha = 0.001, m = 50, center = 1, transmit = 0
+    )
+    WHEN omega>0.0 & reference==1
+    AT (0, 0, 0) RELATIVE arm_sample
+    ROTATED (0, 90, 0) RELATIVE arm_sample
+
+/* event writer as sample *
+COMPONENT samlpeLocation = Slit(xwidth=0.02, yheight=0.02)
+    WHEN omega>0.0 & reference==2
+    AT (0, 0, 0) RELATIVE arm_sample
+COMPONENT event_writer = MCPL_output(filename="sample_events")
+    WHEN omega>0.0 & reference==2
+    AT (0, 0, 0) RELATIVE arm_sample
+    ROTATED (0, 90, 0) RELATIVE arm_sample*/
+
+
+COMPONENT sample_brilliance = Brilliance_monitor(nlam=306,nt=101,filename="sample_brilliance",
+	t_0=0,t_1=300000+1000000.0/source_frequency*n_pulses,lambda_0=0.5, 
+	xwidth=0.017453736*selene_theta, yheight=0.017453736*selene_theta,
+	lambda_1=30.0, Freq=1, srcarea=sample_area)
+	AT (0,0,1) RELATIVE arm_sample
+
+COMPONENT detectorPSD=PSD_monitor(
+            xmin=-0.1, xmax=0.1, 
+			ymin=-0.1, ymax=0.1, 
+			nx=200, ny=200, 
+			filename="detectorPSD")
+    AT (0, 0, detector_distance) RELATIVE arm_detector
+COMPONENT detectorTL=TOFLambda_monitor(
+            xmin=-0.1, xmax=0.1, 
+			ymin=-0.1, ymax=0.1, 
+			Lmin=2.0, Lmax=62.0, nL=600,
+			tmin=0.0, tmax=3e5, nt=300,
+			filename="detectorTL")
+    AT (0, 0, detector_distance) RELATIVE arm_detector
+
+COMPONENT detectorEvents = Monitor_nD(
+	filename = "tof_detector",
+	options = "x limits=[-0.05 0.05] bins=200 y limits=[-0.05 0.05] bins=200 time limits=[0 0.6] bins=6000 lambda limits=[0 35] bins=3500 , list all",
+	xwidth = 0.1, yheight = 0.1)
+//	WHEN omega>0.0 | reference==1
+    AT (0, 0, detector_distance) RELATIVE arm_detector
+
+
+FINALLY
+%{
+%}
+
+END
