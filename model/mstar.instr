@@ -180,6 +180,12 @@ t += 1.0/source_frequency*(rand()%(n_pulses));
 p *= n_pulses; // normalize weights to stay at 1/pulse
 %}
 
+COMPONENT direct_brilliance = Monitor_nD(filename="direct_brilliance",                                         
+	xwidth=0.01, yheight=0.01,
+    options="intensity per cm2 square vdiv limits=[-0.2 0.2] hdiv limits=[-0.2 0.2] lambda limits=[0,30] bins=300")
+AT (0,0,0.000001) RELATIVE InstrumentAxis
+
+
 COMPONENT source_brilliance = Monitor_nD(filename="source_brilliance",                                         
 	xwidth=0.03, yheight=0.03,
     options="intensity per cm2 square vdiv limits=[-0.2 0.2] hdiv limits=[-0.2 0.2] lambda limits=[0,30] bins=300")
