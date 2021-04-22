@@ -1,0 +1,185 @@
+ /*******************************************************************************
+*         McStas instrument definition URL=http://www.mcstas.org
+*
+* Instrument: SNS_FTS_4A_simple
+*
+* %Identification
+* Written by: Artur Glavic (artur.glavic@psi.ch)
+* Date: 04. 21. 2021
+* Origin: PSI
+* Release: McStas 2.6.1
+* Version: 0.1
+* %INSTRUMENT_SITE: ORNL SNS FTS
+*
+* Magnetism Reflectometer beamline 4A
+*
+* %Description
+* Simple model with parametric source at guide exit estimated from one measurement.
+*
+*
+* %Parameters
+* reference: []              0/1 use perfect reflector instead of sample as 
+*                            simple normalization runs. 2 writes events from sample to file.
+* skipping_chopp: []         0/1 use special hybrid pulse skipping chopper with 
+*                            15/4 Hz and 1/1/2 band opening.
+* lambda_min: [A]            Minimum wavelength the chopper is phased for, 
+*                            can be slighly biased to larger valuesdue to 
+*                            central pulse time.
+*
+* %End
+*******************************************************************************/
+
+DEFINE INSTRUMENT SNS_FTS_4A_simple(int reference=0, double lambda_min=2.4, double lambda_max=10.0,
+                                double sample_length=0.01, double sample_height=0.01, double over_illumination=0.0001,
+                                double omega=0.0, double d_omega=0.05)
+
+// optimal for short wavelength around b=0.0325, longer wavelength around b=0.0425
+
+DECLARE
+%{
+
+double S1_distance = 0.317;
+double S2_distance = 0.897;
+double S3_distance = 2.197;
+
+double sample_distance = 2.907;
+double sample_detector = 2.0;
+
+double S1_width;
+double S1_height;
+double S2_width;
+double S2_height;
+double S3_width;
+double S3_height;
+double mod_height;
+double mod_width;
+
+double S1_width=0.0002;
+double S1_height=0.015;
+
+double S2_width=0.0002;
+double S2_height=0.015;
+
+double S3_width=0.0002;
+double S3_height=0.015;
+
+double mod_width=0.00025;
+double mod_height=0.017;
+// max size 35mmx30mm guide size, part seems blocked so it is 30mmx29mm
+
+%}
+
+INITIALIZE
+%{
+
+printf("Slits: %.4f/%.4f  %.4f/%.4f  %.4f/%.4f\n", S1_width, S1_height, S2_width, S2_height, S3_width, S3_height);
+printf("Moderator Focus: %.4f/%.4f\n", mod_height, mod_width);
+
+%}
+
+TRACE
+
+COMPONENT origin = Progress_bar()
+    AT (0,0,0) ABSOLUTE
+
+COMPONENT InstrumentAxis = Arm() // main axis of beam leaving moderator
+    AT (0,0,1.0) RELATIVE origin
+    ROTATED (0, 0, 0.0) RELATIVE origin
+
+COMPONENT arm_sample=Arm()
+    AT (0, 0, sample_distance) RELATIVE InstrumentAxis
+    ROTATED (0,-omega,0) RELATIVE InstrumentAxis
+
+COMPONENT arm_detector=Arm()
+    AT (0, 0, 0) RELATIVE arm_sample
+    ROTATED (0,-omega*2.0,0) RELATIVE InstrumentAxis
+
+
+
+/**********
+ * Source *
+ **********/
+/*
+COMPONENT source = Moderator(
+            radius = 0.04, dist = 1.0, 
+            focus_xw = mod_width, focus_yh = mod_height, 
+            Emin = 0.5, Emax = 15, Ec = mod_Ec, 
+            t0 = mod_t0, gamma = mod_gamma, flux=mod_flux)
+    AT (0, 0, -1.0) RELATIVE InstrumentAxis*/
+
+COMPONENT source = Source_Maxwell_3(
+            xwidth = mod_width, yheight=mod_height, dist = 1.0, 
+            focus_xw = mod_width, focus_yh = mod_height, 
+            Lmin=2.0, Lmax=11.0,
+            T1=45.0, I1=1.4e13,
+            T2=15.0, I2=1.7e13,
+            I3=0.0)
+    AT (0, 0, -1.0) RELATIVE InstrumentAxis
+EXTEND %{
+t = 0.0;
+p*=exp(-2.7*K2V/vz);
+%}
+    
+COMPONENT guide_exit = Slit(xwidth=0.03, yheight=0.02)
+    AT (0, 0, 0) RELATIVE InstrumentAxis
+
+    
+COMPONENT S1 = Slit(xwidth=S1_width, yheight=S1_height)
+    AT (0, 0, S1_distance) RELATIVE InstrumentAxis
+
+COMPONENT S2 = Slit(xwidth=S2_width, yheight=S2_height)
+    AT (0, 0, S2_distance) RELATIVE InstrumentAxis
+
+COMPONENT S3 = Slit(xwidth=S3_width, yheight=S3_height)
+    AT (0, 0, S3_distance) RELATIVE InstrumentAxis
+
+    
+ 
+/* Ni on Silicon as sample */
+COMPONENT sample = Mirror(
+    xwidth = sample_length, yheight = sample_height,
+    center = 1, transmit = 0,
+    reflect = "Si-Ni.ref"
+    )
+	WHEN omega>0.0 & reference==0
+    AT (0, 0, 0) RELATIVE arm_sample
+    ROTATED (0, 90, 0) RELATIVE arm_sample
+
+/* ideal reflector as reference */
+COMPONENT reference_sample = Mirror(
+    xwidth = sample_length, yheight = sample_height,
+    center = 1, transmit = 0,
+    R0 = 1.0, alpha = 0.001, m = 50, center = 1, transmit = 0
+    )
+    WHEN omega>0.0 & reference==1
+    AT (0, 0, 0) RELATIVE arm_sample
+    ROTATED (0, 90, 0) RELATIVE arm_sample
+
+
+COMPONENT detectorPSD=PSD_monitor(
+            xmin=-0.1, xmax=0.1, 
+			ymin=-0.1, ymax=0.1, 
+			nx=200, ny=200, 
+			filename="detectorPSD")
+    AT (0, 0, sample_detector) RELATIVE arm_detector
+COMPONENT detectorTL=TOFLambda_monitor(
+            xmin=-0.1, xmax=0.1, 
+			ymin=-0.1, ymax=0.1, 
+			Lmin=2.0, Lmax=62.0, nL=600,
+			tmin=0.0, tmax=3e5, nt=300,
+			filename="detectorTL")
+    AT (0, 0, sample_detector) RELATIVE arm_detector
+
+COMPONENT detectorEvents = Monitor_nD(
+	filename = "tof_detector",
+	options = "x limits=[-0.05 0.05] bins=200 y limits=[-0.05 0.05] bins=200 time limits=[0 0.6] bins=6000 lambda limits=[0 35] bins=3500 , list all",
+	xwidth = 0.1, yheight = 0.1)
+//	WHEN omega>0.0 | reference==1
+    AT (0, 0, sample_detector) RELATIVE arm_detector
+
+
+FINALLY
+%{
+%}
+
+END
