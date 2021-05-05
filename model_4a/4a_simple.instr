@@ -62,6 +62,7 @@ double S2_height=0.015;
 
 double S3_width=0.0002;
 double S3_height=0.015;
+double omega_factor;
 
 double mod_width=0.00025;
 double mod_height=0.017;
@@ -72,6 +73,13 @@ double mod_height=0.017;
 INITIALIZE
 %{
 
+omega_factor=2.0*tan(d_omega*PI/180.0);
+    
+S1_width=(sample_distance-S1_distance)*omega_factor;
+S2_width=(sample_distance-S2_distance)*omega_factor;
+S3_width=(sample_distance-S3_distance)*omega_factor;
+mod_width=sample_distance*omega_factor;
+    
 printf("Slits: %.4f/%.4f  %.4f/%.4f  %.4f/%.4f\n", S1_width, S1_height, S2_width, S2_height, S3_width, S3_height);
 printf("Moderator Focus: %.4f/%.4f\n", mod_height, mod_width);
 
